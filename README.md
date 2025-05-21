@@ -15,7 +15,9 @@ Byte 3-n  : Payload (je nach Typ)
 | 0x02 | GET\_PEERS | Kein Payload benötigt |
 | 0x12 | SEND\_PEERS |  |
 | 0x03 | PEERS\_CHANGED |  |
-| 0xFF | ERROR\_MESSAGE |  |
+| 0x04 | SEND_BOADCAST |  |
+| 0x14 | MESSAGE_FROM_SERVER |  |
+| 0xFF | ERROR\_MESSAGE |  Nicht genutzt |
 
 ## **3\. Datenobjekte**
 ### Peer
@@ -66,3 +68,10 @@ Der Payload des SEND_PEERS-Befehls besteht aus meheren [Peer-Eintrag](#peer), au
 | 0x01 | Peer wurde entfernt |
 | 0x02 | Peer wurde registriert |
 
+### SEND_BOADCAST:
+Der Payload besteht ausschließlich aus einer UTF-8-kodierten Nachricht.
+Die Länge der Nachricht ergibt sich aus dem allgemeinen Nachrichtenaufbau (siehe Abschnitt 1. Allgemeiner Nachrichtenaufbau) und muss dort im Feld Payload Length angegeben werden.
+
+### MESSAGE_FROM_SERVER
+Der Payload besteht ausschließlich aus einer UTF-8-kodierten Nachricht.
+Die Länge der Nachricht ergibt sich aus dem allgemeinen Nachrichtenaufbau (siehe Abschnitt 1. Allgemeiner Nachrichtenaufbau) und muss dort im Feld Payload Length angegeben werden.
