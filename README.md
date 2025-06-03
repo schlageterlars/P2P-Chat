@@ -71,6 +71,11 @@ Der Payload des SEND_PEERS-Befehls besteht aus meheren [Peer-Eintrag](#peer), au
 ### SEND_BOADCAST:
 Der Payload besteht ausschließlich aus einer UTF-8-kodierten Nachricht.
 Die Länge der Nachricht ergibt sich aus dem allgemeinen Nachrichtenaufbau (siehe Abschnitt 1. Allgemeiner Nachrichtenaufbau) und muss dort im Feld Payload Length angegeben werden.
+        Aufbau: Allgemeiner Nachrichtenaufbau
+
+### MESSAGE_FROM_SERVER
+Der Payload besteht ausschließlich aus einer UTF-8-kodierten Nachricht.
+Die Länge der Nachricht ergibt sich aus dem allgemeinen Nachrichtenaufbau (siehe Abschnitt 1. Allgemeiner Nachrichtenaufbau) und muss dort im Feld Payload Length angegeben werden.
 
 ### Spezifikationen zur Kommunikation zwischen Clients
 
@@ -91,8 +96,3 @@ Die Länge der Nachricht ergibt sich aus dem allgemeinen Nachrichtenaufbau (sieh
         1 Byte Verifizierung: Quersumme des Namens
 
 0x25    MESSAGE_TO_PEER
-        Aufbau: Allgemeiner Nachrichtenaufbau
-
-### MESSAGE_FROM_SERVER
-Der Payload besteht ausschließlich aus einer UTF-8-kodierten Nachricht.
-Die Länge der Nachricht ergibt sich aus dem allgemeinen Nachrichtenaufbau (siehe Abschnitt 1. Allgemeiner Nachrichtenaufbau) und muss dort im Feld Payload Length angegeben werden.
