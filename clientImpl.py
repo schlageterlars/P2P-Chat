@@ -4,10 +4,12 @@ import socket
 import time
 import threading
 import pprint
+import queue
+
 VERBOSE:bool = False
 SERVER_IP:str= "10.147.85.98"
-OWN_IP:str = "10.147.85.42"
-SERVER_PORT:int= 64919
+OWN_IP:str = "10.147.85.205"
+SERVER_PORT:int= 12345
 class clientImpl():
     def __init__(self, nickname: str):
             self.nickname:str = nickname
@@ -22,9 +24,11 @@ class clientImpl():
             self.server_socket.setblocking(True)
             self.tracked_users_udp_socket:dict[str, tuple[str, int]] = {}
             self.tracked_user_tcp_socket:dict[str, socket.socket] = {}
+            self.broadcast_queue = queue.Queue()
 
     def send(self, nickname: str, msg: str):
         if(nickname.lower() == "broadcast"):
+
             print("broadcasting is not supported yet")
             return
         if nickname not in self.tracked_user_tcp_socket:
@@ -43,6 +47,7 @@ class clientImpl():
             try:
                 data = build_connection_request(new_socket.getsockname()[0], new_socket.getsockname()[1])
                 new_udp_socket.sendto(data, (peer_ip, peer_port))
+                print(f"Send request for getting TCP Port to {(peer_ip, peer_port)}")
                 new_socket.listen()
                 new_socket, addr = new_socket.accept()
                 data = new_socket.recv(1024)
@@ -54,18 +59,20 @@ class clientImpl():
                     print(f"recieved_nickname:{received_nickname}")
                     print("Invalid peer response, aborting.")
                     return
-                print(f"Established TCP connection to {nickname}")
+                print(f"Established TCP connection to {nickname} {addr}")
                 self.tracked_user_tcp_socket[nickname] = new_socket
+
+                peer_return_packet = build_peer_connecting(self.nickname)
+                new_socket.send(peer_return_packet)
             except Exception as e:
                 print(f"Failed to connect to {nickname}: {e}")
                 print(f"my ip_addr: {self.ip_addr} my port: {self.port}")
                 return
 
-        peer_return_packet = build_peer_connecting(self.nickname)
-        new_socket.send(peer_return_packet)
-        packet = build_message_to_peer(msg)
         try:
+            packet = build_message_to_peer(msg)
             self.tracked_user_tcp_socket[nickname].send(packet)
+            print(f"Send message to {nickname}: {msg}")
         except Exception as e:
             print(f"Send failed, retrying TCP connect to {nickname}: {e}")
             self.tracked_user_tcp_socket.pop(nickname)
@@ -108,14 +115,15 @@ class clientImpl():
         index = 0
         while True:
             data = bytes()
-            if index == 0:
+            if len(self.tracked_user_tcp_socket) == 0:
                 continue
             try:
                 data = self.tracked_user_tcp_socket[list(self.tracked_user_tcp_socket.keys())[index]].recv(1024)
+                index = (index + 1) % len(self.tracked_user_tcp_socket)
             except socket.error as e:
-                time.sleep(1)
                 index = (index + 1) % len(self.tracked_user_tcp_socket)
                 continue
+
             message_id, payload_length = struct.unpack(">BH", data[:3])
             payload = data[3:3 + payload_length]
             output_message = f"[{list(self.tracked_users_udp_socket.keys())[index]}]:{payload.decode('utf-8')}"
@@ -205,6 +213,17 @@ class clientImpl():
 
     def handle_server_com(self):
         while True:
+            # Check if input queue has data
+            try:
+                user_input = self.broadcast_queue.get_nowait()
+            except queue.Empty:
+                user_input = None
+
+            if user_input:
+                print(f"Handling user input for broadcast in server thread: {user_input}")
+                packet = build_packet(0x04, user_input.encode())
+                self.server_socket.send(packet)
+
             get_peers_packet = build_packet(0x02, b"")
             try:
                 self.server_socket.send(get_peers_packet)
@@ -291,7 +310,13 @@ def parse_packet(packet: bytes) -> tuple[int, bytes]:
         raise ValueError("Paket zu kurz für Header.")
 
     msg_id, payload_length = struct.unpack(header_format, packet[:header_size])
-    payload = struct.unpack(f">{payload_length}s", packet[header_size:])[0]
+
+    if len(packet) < header_size + payload_length:
+        raise ValueError("Paket zu kurz für Payload.")
+
+    payload_format = f">{payload_length}s"
+    payload = struct.unpack(payload_format, packet[header_size:header_size + payload_length])[0]
+
     return msg_id, payload
 
 def checksum(name: str) -> int:
@@ -365,7 +390,10 @@ if __name__ == "__main__":
         if len(split) == 2:
             target_nickname = split[0]
             target_msg = split[1]
-            current_client.send(target_nickname, target_msg)
+            if target_nickname == "broadcast":
+                current_client.broadcast_queue.put(target_msg)
+            else:
+                current_client.send(target_nickname, target_msg)
         else:
             print("invallid format")
     print("closing connection")
