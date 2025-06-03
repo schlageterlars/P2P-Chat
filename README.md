@@ -76,23 +76,55 @@ Die Länge der Nachricht ergibt sich aus dem allgemeinen Nachrichtenaufbau (sieh
 ### MESSAGE_FROM_SERVER
 Der Payload besteht ausschließlich aus einer UTF-8-kodierten Nachricht.
 Die Länge der Nachricht ergibt sich aus dem allgemeinen Nachrichtenaufbau (siehe Abschnitt 1. Allgemeiner Nachrichtenaufbau) und muss dort im Feld Payload Length angegeben werden.
+# Netzwerkprotokoll-Dokumentation
 
-### Spezifikationen zur Kommunikation zwischen Clients
+Dieses Dokument beschreibt den Aufbau der verschiedenen Nachrichtentypen innerhalb eines Peer-to-Peer-Kommunikationsprotokolls.
 
-0x05    CONNECTION_REQUEST (UDP-Anfrage an anderen Client)
-        Aufbau:
-        1 Byte ID
-        2 Byte Payloadlength
-        Payload:
-        4 Byte eigene IP-Adresse
-        2 Byte eigener TCP-Port
+---
 
-0x15    PEER_CONNECTING (TCP Antwort auf UDP Anfrage)
-        Aufbau:
-        1 Byte ID
-        2 Byte Payloadlength
-        Payload:
-        n Byte Nickname
-        1 Byte Verifizierung: Quersumme des Namens
+## 📡 `0x05` CONNECTION_REQUEST
 
-0x25    MESSAGE_TO_PEER
+**Typ:** UDP-Anfrage an einen anderen Client
+
+### Aufbau:
+| Feld             | Größe     | Beschreibung                |
+|------------------|-----------|-----------------------------|
+| ID               | 1 Byte    | Nachrichtentyp (0x05)       |
+| Payloadlength    | 2 Byte    | Länge des Payloads          |
+
+### Payload:
+| Feld             | Größe     | Beschreibung                  |
+|------------------|-----------|-------------------------------|
+| Eigene IP-Adresse| 4 Byte    | IPv4-Adresse des Senders      |
+| Eigener TCP-Port | 2 Byte    | TCP-Port des Senders          |
+
+---
+
+## 🔗 `0x15` PEER_CONNECTING
+
+**Typ:** TCP-Antwort auf eine UDP-Anfrage
+
+### Aufbau:
+| Feld             | Größe     | Beschreibung                |
+|------------------|-----------|-----------------------------|
+| ID               | 1 Byte    | Nachrichtentyp (0x15)       |
+| Payloadlength    | 2 Byte    | Länge des Payloads          |
+
+### Payload:
+| Feld              | Größe        | Beschreibung                          |
+|-------------------|--------------|---------------------------------------|
+| Nickname          | n Byte       | Anzeigename des Peers                 |
+| Verifizierung     | 1 Byte       | Quersumme des Namens zur Prüfung      |
+
+---
+
+## 💬 `0x25` MESSAGE_TO_PEER
+
+**Typ:** Allgemeiner Nachrichtenaufbau (z. B. Chatnachricht)
+
+### Aufbau:
+* Wird nach allgemeinem Nachrichtenformat strukturiert (Details nicht in diesem Dokument enthalten)
+
+---
+
+> ✏️ **Hinweis:** Alle Längenangaben beziehen sich auf die Byte-Größe der jeweiligen Felder.
