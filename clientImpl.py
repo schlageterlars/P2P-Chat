@@ -220,7 +220,7 @@ class clientImpl():
                 user_input = None
 
             if user_input:
-                print(f"Handling user input for broadcast in server thread: {user_input}")
+                print(f"Sending '{user_input}' broadcast.")
                 packet = build_packet(0x04, user_input.encode())
                 self.server_socket.send(packet)
 
@@ -240,7 +240,7 @@ class clientImpl():
                 #print("got peers list")
                 self.handle_send_peers(payload)
                 self.LATEST_LIST_PRINTED = False
-            elif msg_id == 0x04:
+            elif msg_id == 0x14:
                 print(f"[BROADCAST]: {payload.decode('utf-8')}")
             time.sleep(1)
 
