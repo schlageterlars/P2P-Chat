@@ -128,16 +128,14 @@ class ChatServer(Server):
             except:
                 continue
 
-    def broadcast(self, message: str, origin_sock):
+    def broadcast(self, message: str, sock):
         with self.lock:
             payload = message.encode()
             msg = bytes([MSG_FROM_SERVER]) + len(payload).to_bytes(2, 'big') + payload
             for user in self.clients.values():
+                print(f"[INFO] Sende Broadcast an {user.nickname}: {user.address}")
                 try:
-                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    sock.connect(user.address)
-                    sock.sendall(msg)
-                    sock.close()
+                    sock.sendto(msg, user.address)
                 except Exception as e:
                     print(f"[WARN] Broadcast an {user.nickname} fehlgeschlagen: {e}")
 
