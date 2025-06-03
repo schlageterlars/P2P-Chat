@@ -13,7 +13,6 @@ SERVER_PORT:int= 12345
 class clientImpl():
     def __init__(self, nickname: str):
             self.nickname:str = nickname
-
             self.LATEST_LIST_PRINTED = True
             self.udp_socket: socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             self.udp_socket.bind((OWN_IP, 0))
@@ -288,6 +287,32 @@ class clientImpl():
             except Exception as e:
                 print(f"[ERROR] Fehler beim Hinzufügen von Peer {nickname}: {e}")
 
+    def exit_from_server(self):
+        # Calculate length (an integer), not assign the nickname itself
+        nicknamelen = len(self.nickname)
+        format_string = f">B{nicknamelen}s4sHH"
+        nickname_encoded = self.nickname.encode("utf-8")
+        ip_bytes = socket.inet_aton(self.ip_addr)
+        msg_id = 0x03
+
+        payload = struct.pack(format_string,
+                            nicknamelen,
+                            nickname_encoded,
+                            ip_bytes,
+                            self.port,
+                            0x01)
+
+        package = build_packet(msg_id, payload)
+        self.server_socket.settimeout(5)
+        try:
+            for cur_try in range(0, 2):
+                self.server_socket.send(package)
+                break
+        except socket.error as e:
+            print("Couldn't deregister from server")
+            print(e)
+
+
     def printlist(self):
         while True:
             if not self.LATEST_LIST_PRINTED:
@@ -295,6 +320,7 @@ class clientImpl():
                 self.LATEST_LIST_PRINTED = True
             else:
                 time.sleep(1)
+    
 
 
 
