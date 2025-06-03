@@ -8,11 +8,11 @@ class Server:
         pass
     
     @abstractmethod
-    def deregister(nickname: str):
+    def deregister(self, nickname: str):
         pass
     
     @abstractmethod
-    def list() -> list[User]:
+    def list(self) -> list[User]:
         pass
     
     @abstractmethod
@@ -20,5 +20,5 @@ class Server:
         pass
     
     @abstractmethod
-    def receive():
+    def receive(self, sock):
         pass
