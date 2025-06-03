@@ -76,13 +76,15 @@ Die Länge der Nachricht ergibt sich aus dem allgemeinen Nachrichtenaufbau (sieh
 ### MESSAGE_FROM_SERVER
 Der Payload besteht ausschließlich aus einer UTF-8-kodierten Nachricht.
 Die Länge der Nachricht ergibt sich aus dem allgemeinen Nachrichtenaufbau (siehe Abschnitt 1. Allgemeiner Nachrichtenaufbau) und muss dort im Feld Payload Length angegeben werden.
-# Netzwerkprotokoll-Dokumentation
+
+
+## Netzwerkprotokoll-Dokumentation
 
 Dieses Dokument beschreibt den Aufbau der verschiedenen Nachrichtentypen innerhalb eines Peer-to-Peer-Kommunikationsprotokolls.
 
 ---
 
-## 📡 `0x05` CONNECTION_REQUEST
+### 📡 `0x05` CONNECTION_REQUEST
 
 **Typ:** UDP-Anfrage an einen anderen Client
 
@@ -100,7 +102,7 @@ Dieses Dokument beschreibt den Aufbau der verschiedenen Nachrichtentypen innerha
 
 ---
 
-## 🔗 `0x15` PEER_CONNECTING
+### 🔗 `0x15` PEER_CONNECTING
 
 **Typ:** TCP-Antwort auf eine UDP-Anfrage
 
@@ -118,7 +120,7 @@ Dieses Dokument beschreibt den Aufbau der verschiedenen Nachrichtentypen innerha
 
 ---
 
-## 💬 `0x25` MESSAGE_TO_PEER
+### 💬 `0x25` MESSAGE_TO_PEER
 
 **Typ:** Allgemeiner Nachrichtenaufbau (z. B. Chatnachricht)
 
