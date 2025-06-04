@@ -38,6 +38,7 @@ class ChatServer(Server):
                 print(f"[ERROR] Fehler beim accept: {e}")
 
     def receive(self, sock):
+        nickname = None
         while True:
             try:
                 header = sock.recv(3)
@@ -47,12 +48,15 @@ class ChatServer(Server):
                 payload = sock.recv(payload_len)
 
                 if msg_id == MSG_REGISTER:
-                    self.handle_register(sock, payload)
+                    nickname = self.handle_register(sock, payload)
+                    if nickname == "":
+                        return
                 elif msg_id == MSG_GET_PEERS:
                     self.send_peer_list(sock)
                 elif msg_id == MSG_SEND_BROADCAST:
                     self.broadcast(payload.decode(), sock)
                 elif msg_id == MSG_PEERS_CHANGED:
+                    print("[INFO] Peer-Änderung empfangen")
                     nickname_len = payload[0]
                     nickname = payload[1:1+nickname_len].decode()
                     status = payload[1+nickname_len]
@@ -62,13 +66,17 @@ class ChatServer(Server):
                             self.deregister(nickname)
                         elif status == STATUS_PEER_ADDED:
                             self.send_peer_change(user, STATUS_PEER_ADDED)
+                        else:
+                            print(f"[WARN] Unbekannte Nachricht: {status}")
                 else:
                     print(f"[WARN] Unbekannte Nachricht: {msg_id}")
             except Exception as e:
                 print(f"[ERROR] receive(): {e}")
+
+                self.deregister(nickname)
                 break
 
-    def handle_register(self, sock, payload):
+    def handle_register(self, sock, payload) -> str:
         nickname_len = payload[0]
         nickname = payload[1:1+nickname_len].decode()
         ip_bytes = payload[1+nickname_len:1+nickname_len+4]
@@ -79,12 +87,13 @@ class ChatServer(Server):
         with self.lock:
             if nickname in self.clients:
                 self.send_register_response(sock, STATUS_FAIL)
-                return
-            user = User.from_tuple((ip, port, nickname))
+                return ""
+            user = User.from_tuple((ip, port, sock, nickname))
             self.clients[nickname] = user
             self.send_register_response(sock, STATUS_SUCCESS)
             print(f"[INFO] {nickname} registriert von {ip}:{port}")
             self.send_peer_change(user, STATUS_PEER_ADDED)
+        return nickname
 
     def send_register_response(self, sock, status_code):
         msg = bytes([MSG_REGISTER_RESPONSE, 0x00, 0x01, status_code])
@@ -104,7 +113,7 @@ class ChatServer(Server):
 
     def deregister(self, nickname: str):
         with self.lock:
-            user = self.clients.pop(nickname, None)
+            user = self.clients.pop(nickname)
             if user:
                 self.send_peer_change(user, STATUS_PEER_REMOVED)
                 print(f"[INFO] {nickname} abgemeldet")
@@ -121,10 +130,7 @@ class ChatServer(Server):
 
         for peer in self.clients.values():
             try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.connect(peer.address)
-                sock.sendall(msg)
-                sock.close()
+                peer.sock.send(msg)
             except:
                 continue
 
@@ -133,9 +139,9 @@ class ChatServer(Server):
             payload = message.encode()
             msg = bytes([MSG_FROM_SERVER]) + len(payload).to_bytes(2, 'big') + payload
             for user in self.clients.values():
-                print(f"[INFO] Sende Broadcast an {user.nickname}: {user.address}")
                 try:
-                    sock.sendto(msg, user.address)
+                    user.sock.send(msg)
+                    print(f"[INFO] Sende Broadcast an {user.nickname}: {user.address}")
                 except Exception as e:
                     print(f"[WARN] Broadcast an {user.nickname} fehlgeschlagen: {e}")
 
