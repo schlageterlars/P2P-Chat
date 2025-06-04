@@ -1,4 +1,5 @@
 import socket
+import sys
 import threading
 from user import User
 from server import Server
@@ -16,9 +17,10 @@ STATUS_FAIL = 0x02
 STATUS_PEER_REMOVED = 0x01
 STATUS_PEER_ADDED = 0x02
 
+#'10.147.85.98'
 class ChatServer(Server):
-    def __init__(self, host='10.147.85.98', port=12345):
-        self.clients = {}
+    def __init__(self, host='127.0.0.1', port=12345):
+        self.clients :dict ={}
         self.lock = threading.Lock()
         self.host = host
         self.port = port
@@ -54,22 +56,22 @@ class ChatServer(Server):
                 elif msg_id == MSG_GET_PEERS:
                     self.send_peer_list(sock)
                 elif msg_id == MSG_SEND_BROADCAST:
-                    self.broadcast(payload.decode(), sock)
+                    self.broadcast(payload.decode())
                 elif msg_id == MSG_PEERS_CHANGED:
                     print("[INFO] Peer-Änderung empfangen")
                     nickname_len = payload[0]
-                    nickname = payload[1:1+nickname_len].decode()
-                    status = payload[1+nickname_len]
-                    user = self.clients.get(nickname)
-                    if user:
-                        if status == STATUS_PEER_REMOVED:
-                            self.deregister(nickname)
-                        elif status == STATUS_PEER_ADDED:
-                            self.send_peer_change(user, STATUS_PEER_ADDED)
-                        else:
-                            print(f"[WARN] Unbekannte Nachricht: {status}")
+                    nickname = payload[1:1+nickname_len].decode("utf-8")
+                    status = payload[-1]
+                    if status == STATUS_PEER_REMOVED:
+                        print(f"[INFO] abgemelden")
+                        self.deregister(nickname)
+                    elif status == STATUS_PEER_ADDED:
+                        print(f"[INIO] angemelden")
+                        #self.send_peer_change(user, STATUS_PEER_ADDED)
+                    else:
+                        print(f"[WARN] Unbekannter STATUS: {status}")
                 else:
-                    print(f"[WARN] Unbekannte Nachricht: {msg_id}")
+                    print(f"[WARN] Unbekannte MSG_ID: {msg_id}")
             except Exception as e:
                 print(f"[ERROR] receive(): {e}")
 
@@ -87,6 +89,8 @@ class ChatServer(Server):
         with self.lock:
             if nickname in self.clients:
                 self.send_register_response(sock, STATUS_FAIL)
+                sock.close()
+                print(f"[WARN] {nickname} bereits registriert")
                 return ""
             user = User.from_tuple((ip, port, sock, nickname))
             self.clients[nickname] = user
@@ -97,6 +101,7 @@ class ChatServer(Server):
 
     def send_register_response(self, sock, status_code):
         msg = bytes([MSG_REGISTER_RESPONSE, 0x00, 0x01, status_code])
+        print(f"[INFO] Sende Registrierung-Antwort: {msg}")
         sock.sendall(msg)
 
     def send_peer_list(self, sock):
@@ -116,31 +121,38 @@ class ChatServer(Server):
             user = self.clients.pop(nickname)
             if user:
                 self.send_peer_change(user, STATUS_PEER_REMOVED)
+                user.sock.close()
                 print(f"[INFO] {nickname} abgemeldet")
+                sys.exit(0)
+            else:
+                print(f"[WARN] {nickname} nicht gefunden, kann nicht abgemeldet werden")
 
     def list(self) -> list[User]:
         with self.lock:
             return list(self.clients.values())
 
 
-    def send_peer_change(self, user: User, status: int):
+    def send_peer_change(self, user:User, status:int):
         data = self.encode_peer(user) + bytes([status])
         header = bytes([MSG_PEERS_CHANGED]) + len(data).to_bytes(2, 'big')
         msg = header + data
 
         for peer in self.clients.values():
             try:
-                peer.sock.send(msg)
-            except:
+                print(f"[INFO] Sende Peer-Änderung an {peer.sock}")
+                peer.sock.sendall(msg)
+            except Exception as e:
+                print(f"[ERROR] Senden der Peer-Änderung an {peer.nickname} fehlgeschlagen")
+                print(f"Error: {e}")
                 continue
 
-    def broadcast(self, message: str, sock):
+    def broadcast(self, message: str):
         with self.lock:
             payload = message.encode()
             msg = bytes([MSG_FROM_SERVER]) + len(payload).to_bytes(2, 'big') + payload
             for user in self.clients.values():
                 try:
-                    user.sock.send(msg)
+                    user.sock.sendall(msg)
                     print(f"[INFO] Sende Broadcast an {user.nickname}: {user.address}")
                 except Exception as e:
                     print(f"[WARN] Broadcast an {user.nickname} fehlgeschlagen: {e}")

@@ -16,7 +16,7 @@ class Server:
         pass
     
     @abstractmethod
-    def send_to_all(from_nickname: str, msg: str):
+    def broadcast(self, message: str):
         pass
     
     @abstractmethod

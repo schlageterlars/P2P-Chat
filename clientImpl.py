@@ -7,8 +7,8 @@ import pprint
 import queue
 
 VERBOSE:bool = False
-SERVER_IP:str= "10.147.85.98"
-OWN_IP:str = "10.147.85.42"
+SERVER_IP:str= "127.0.0.1"
+OWN_IP:str = "127.0.0.1"
 SERVER_PORT:int= 12345
 class clientImpl():
     def __init__(self, nickname: str):
@@ -18,18 +18,13 @@ class clientImpl():
             self.udp_socket.bind((OWN_IP, 0))
             self.ip_addr, self.port = self.udp_socket.getsockname()
             print(f"UDP socket bound to {self.ip_addr}:{self.port}")
-
             self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.server_socket.setblocking(True)
+            self.server_socket.settimeout(1)
             self.tracked_users_udp_socket:dict[str, tuple[str, int]] = {}
             self.tracked_user_tcp_socket:dict[str, socket.socket] = {}
             self.broadcast_queue = queue.Queue()
 
     def send(self, nickname: str, msg: str):
-        if(nickname.lower() == "broadcast"):
-
-            print("broadcasting is not supported yet")
-            return
         if nickname not in self.tracked_user_tcp_socket:
             if nickname not in self.tracked_users_udp_socket.keys():
                 print("User was not found!")
@@ -67,7 +62,6 @@ class clientImpl():
                 print(f"Failed to connect to {nickname}: {e}")
                 print(f"my ip_addr: {self.ip_addr} my port: {self.port}")
                 return
-
         try:
             packet = build_message_to_peer(msg)
             self.tracked_user_tcp_socket[nickname].send(packet)
@@ -80,7 +74,6 @@ class clientImpl():
         while True:
             try:
                 print("Connecting to Server..")
-
                 self.server_socket.connect((SERVER_IP, SERVER_PORT))
                 break
             except socket.timeout:
@@ -101,10 +94,16 @@ class clientImpl():
         payload = struct.pack(format_string, nicknamelen, nickname_encoded, ip_bytes, self.port)
         package = build_packet(msg_id, payload)
         self.server_socket.send(package)
+
         try:
-            return_val = self.server_socket.recv(1024).decode("utf-8")
-            if (return_val == str(0x01)):
+            raw_data = self.server_socket.recv(4)
+            ret_msg_id, ret_payload = parse_packet(raw_data)
+            if int.from_bytes(ret_payload) == 0x01:
                 print("Server LogIn successfull")
+            else:
+                print(f"User already in server. Try to use a different username !")
+                print("du dummy")
+                exit(1)
         except socket.error as e:
             pass
             print("Login unnsuccessful")
@@ -183,8 +182,8 @@ class clientImpl():
                         print("retrying")
             if contin:
                 continue
+            data = bytes()
             for current_try in range(0,3):
-                data = bytes()
                 try:
                     print("getting hostname")
                     data = new_socket.recv(1024)
@@ -207,7 +206,6 @@ class clientImpl():
                 continue
             print("succesfully established connection")
             self.tracked_user_tcp_socket[target_nickname] = new_socket
-
             return
 
     def handle_server_com(self):
@@ -217,92 +215,62 @@ class clientImpl():
                 user_input = self.broadcast_queue.get_nowait()
             except queue.Empty:
                 user_input = None
-
             if user_input:
                 print(f"Sending '{user_input}' broadcast.")
                 packet = build_packet(0x04, user_input.encode())
                 self.server_socket.send(packet)
-
-            get_peers_packet = build_packet(0x02, b"")
-            try:
-                self.server_socket.send(get_peers_packet)
-                time.sleep(1)
-            except socket.timeout:
-                continue
             try:
                 data = self.server_socket.recv(1024)
-            except socket.TimeoutError as e:
-                print("TimeOut while trying to recieve list")
+            except socket.timeout:
                 continue
             msg_id, payload = parse_packet(data)
-            if msg_id == 0x12:
-                #print("got peers list")
+            if msg_id == 0x03:
                 self.handle_send_peers(payload)
                 self.LATEST_LIST_PRINTED = False
             elif msg_id == 0x14:
                 print(f"[BROADCAST]: {payload.decode('utf-8')}")
+            else:
+                print(msg_id)
             time.sleep(1)
 
-    def parse_send_peers(self, payload: bytes) -> list[tuple[str, str, int]]:
-        peers = []
-        offset = 0
+    def parse_send_peer(self, payload: bytes) -> tuple[str, str, int, int]:
+        nickname_len = struct.unpack('B', payload[0:1])[0]
+        nickname_fmt = f'{nickname_len}s'
+        nickname = struct.unpack_from(nickname_fmt, payload, offset=1)[0].decode('utf-8')
+        ip_port_fmt = '>4sH'  # 4 bytes IP, 2 bytes UDP port (big endian)
+        ip_bytes, port = struct.unpack_from(ip_port_fmt, payload, offset=1 + nickname_len)
+        ip_address = socket.inet_ntoa(ip_bytes)
 
-        if len(payload) < 1:
-            raise ValueError("Payload zu kurz, keine Anzahl der Peers enthalten.")
-
-        num_peers = payload[offset]
-        offset += 1
-
-        for _ in range(num_peers):
-            if offset >= len(payload):
-                raise ValueError("Unerwartetes Ende des Payloads beim Parsen von Peers.")
-
-            nick_len = payload[offset]
-            offset += 1
-
-            nickname_bytes = payload[offset:offset + nick_len]
-            nickname = nickname_bytes.decode("utf-8")
-            offset += nick_len
-
-            ip_bytes = payload[offset:offset + 4]
-            ip = socket.inet_ntoa(ip_bytes)
-            offset += 4
-
-            port_bytes = payload[offset:offset + 2]
-            port = struct.unpack(">H", port_bytes)[0]
-            offset += 2
-            peers.append((nickname, ip, port))
-        return peers
+        status = payload[-1]
+        return nickname, ip_address, port, status
 
     def handle_send_peers(self, payload: bytes):
-        peer_list = self.parse_send_peers(payload)
-        for nickname, ip, port in peer_list:
-            if nickname == self.nickname or nickname in self.tracked_users_udp_socket.keys():
-                continue
-
-            try:
-                udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                self.tracked_users_udp_socket[nickname] = (ip, port)
-                print(f"[INFO] Neuer Peer hinzugefügt: {nickname} @ {ip}:{port}")
-            except Exception as e:
-                print(f"[ERROR] Fehler beim Hinzufügen von Peer {nickname}: {e}")
+        nickname, ip_addr, port, status = self.parse_send_peer(payload)
+        if status == 0x02:
+            if nickname in self.tracked_users_udp_socket.keys():
+                print(f"New User {nickname} cannot join due to the alias already being present")
+            else:
+                print(f"New User: {nickname} joined the chat!")
+                self.tracked_users_udp_socket[nickname] = (ip_addr, port)
+        elif status == 0x01:
+            if nickname not in self.tracked_users_udp_socket.keys():
+                print(f"User: {nickname} not in list an cannot be removed")
+            else:
+                self.tracked_users_udp_socket.pop(nickname)
+                print(f"User: {nickname} left")
+        else:
+            print(f"unbekanntes statuscode beim bearbeiten der User-list: {status}")
 
     def exit_from_server(self):
         # Calculate length (an integer), not assign the nickname itself
-        nicknamelen = len(self.nickname)
-        format_string = f">B{nicknamelen}s4sHH"
+        nicknamelen = len(self.nickname.encode("utf-8"))
         nickname_encoded = self.nickname.encode("utf-8")
         ip_bytes = socket.inet_aton(self.ip_addr)
         msg_id = 0x03
 
-        payload = struct.pack(format_string,
-                            nicknamelen,
-                            nickname_encoded,
-                            ip_bytes,
-                            self.port,
-                            0x01)
-
+        payload = int.to_bytes(nicknamelen) + nickname_encoded + ip_bytes + struct.pack(">H", self.port) + int.to_bytes(0x01)
         package = build_packet(msg_id, payload)
+        print(package)
         self.server_socket.settimeout(5)
         try:
             for cur_try in range(0, 2):
@@ -313,7 +281,6 @@ class clientImpl():
             print("Couldn't deregister from server")
             print(e)
 
-
     def printlist(self):
         while True:
             if not self.LATEST_LIST_PRINTED:
@@ -321,9 +288,6 @@ class clientImpl():
                 self.LATEST_LIST_PRINTED = True
             else:
                 time.sleep(1)
-    
-
-
 
 def build_packet(msg_id: int, payload: bytes) -> bytes:
     payload_length = len(payload)
@@ -332,15 +296,11 @@ def build_packet(msg_id: int, payload: bytes) -> bytes:
 def parse_packet(packet: bytes) -> tuple[int, bytes]:
     header_format = ">BH"
     header_size = struct.calcsize(header_format)
-
     if len(packet) < header_size:
         raise ValueError("Paket zu kurz für Header.")
-
     msg_id, payload_length = struct.unpack(header_format, packet[:header_size])
-
     if len(packet) < header_size + payload_length:
         raise ValueError("Paket zu kurz für Payload.")
-
     payload_format = f">{payload_length}s"
     payload = struct.unpack(payload_format, packet[header_size:header_size + payload_length])[0]
 
@@ -412,7 +372,6 @@ if __name__ == "__main__":
         current_input = input()
         if current_input.lower() == "exit":
             break
-
         split = current_input.split(" ", 1)
         if len(split) == 2:
             target_nickname = split[0]
