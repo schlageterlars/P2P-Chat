@@ -8,7 +8,7 @@ import queue
 
 VERBOSE:bool = False
 SERVER_IP:str= "10.147.85.98"
-OWN_IP:str = "10.147.85.205"
+OWN_IP:str = "10.147.85.42"
 SERVER_PORT:int= 12345
 class clientImpl():
     def __init__(self, nickname: str):
@@ -307,6 +307,7 @@ class clientImpl():
         try:
             for cur_try in range(0, 2):
                 self.server_socket.send(package)
+                
                 break
         except socket.error as e:
             print("Couldn't deregister from server")
@@ -423,6 +424,7 @@ if __name__ == "__main__":
         else:
             print("invallid format")
     print("closing connection")
+    current_client.exit_from_server()
     current_client.server_socket.close()
     current_client.udp_socket.close()
     for sock in current_client.tracked_user_tcp_socket.values():
