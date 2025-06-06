@@ -17,6 +17,8 @@ STATUS_FAIL = 0x02
 STATUS_PEER_REMOVED = 0x01
 STATUS_PEER_ADDED = 0x02
 
+VERBOSE: bool = False
+
 #'10.147.85.98'
 class ChatServer(Server):
     def __init__(self, host='127.0.0.1', port=12345):
@@ -63,7 +65,8 @@ class ChatServer(Server):
                     nickname = payload[1:1+nickname_len].decode("utf-8")
                     status = payload[-1]
                     if status == STATUS_PEER_REMOVED:
-                        print(f"[INFO] abgemelden")
+                        if VERBOSE:
+                            print(f"[INFO] abgemelden")
                         self.deregister(nickname)
                     elif status == STATUS_PEER_ADDED:
                         print(f"[INIO] angemelden")
@@ -74,7 +77,6 @@ class ChatServer(Server):
                     print(f"[WARN] Unbekannte MSG_ID: {msg_id}")
             except Exception as e:
                 print(f"[ERROR] receive(): {e}")
-
                 self.deregister(nickname)
                 break
 

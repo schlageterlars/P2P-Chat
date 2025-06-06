@@ -10,13 +10,16 @@ VERBOSE:bool = False
 SERVER_IP:str= "127.0.0.1"
 OWN_IP:str = "127.0.0.1"
 SERVER_PORT:int= 12345
+RUNNING = True
+
 class clientImpl():
     def __init__(self, nickname: str):
             self.nickname:str = nickname
-            self.LATEST_LIST_PRINTED = True
             self.udp_socket: socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self.udp_socket.settimeout(1)
             self.udp_socket.bind((OWN_IP, 0))
             self.ip_addr, self.port = self.udp_socket.getsockname()
+            
             if VERBOSE:
                 print(f"UDP socket bound to {self.ip_addr}:{self.port}")
             self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -75,7 +78,7 @@ class clientImpl():
             self.tracked_user_tcp_socket.pop(nickname)
 
     def connect_to_server(self):
-        while True:
+        while True and RUNNING:
             try:
                 print("Connecting to Server..")
                 self.server_socket.connect((SERVER_IP, SERVER_PORT))
@@ -116,23 +119,32 @@ class clientImpl():
 
     def recieve(self):
         index = 0
-        while True:
+        while True and RUNNING: #geht nicht mehr raus
             if len(self.tracked_user_tcp_socket) == 0:
+                time.sleep(0.5)
                 continue
             data = bytes()
+            current_user = None
             try:
                 current_user = list(self.tracked_user_tcp_socket.keys())[index]
                 data = self.tracked_user_tcp_socket[current_user].recv(1024)
                 index = (index + 1) % len(self.tracked_user_tcp_socket)
-            except socket.error as e:
-                index = (index + 1) % len(self.tracked_user_tcp_socket)
-                continue
+                if data:
+                    message_id, payload_length = struct.unpack(">BH", data[:3])
+                    payload = data[3:3 + payload_length]
+                    output_message = f"[{current_user}]:{payload.decode('utf-8')}"
+                    print(output_message)
+                else:
+                    print(f"lost connection to {current_user}")
+                    if current_user in self.tracked_user_tcp_socket:
+                        self.tracked_user_tcp_socket.pop(current_user)
             except struct.error as e:
                 print(f"lost connection to {current_user}")
-            message_id, payload_length = struct.unpack(">BH", data[:3])
-            payload = data[3:3 + payload_length]
-            output_message = f"[{current_user}]:{payload.decode('utf-8')}"
-            print(output_message)
+                if current_user in self.tracked_user_tcp_socket:
+                    self.tracked_user_tcp_socket.pop(current_user)
+            except socket.error as e:
+                index = (index + 1) % len(self.tracked_user_tcp_socket)
+
 
     def listen_for_UDP_request(self):
         """
@@ -140,22 +152,24 @@ class clientImpl():
         """
         #recieve request
         ip, port =  (0, "")
-        while True:
+        while True and RUNNING:
             try:
                 data, addr = self.udp_socket.recvfrom(1024)
                 msg_id, data = parse_packet(data)
                 ip, port = parse_connection_request(data)
                 break
-            except socket.error as e:
-                time.sleep(1)
-                continue
+            except socket.timeout as e:
+                if RUNNING:
+                    continue
+                else:
+                    break
         threading.Thread(target=self.listen_for_UDP_request, daemon=True).start()
         #response
         if VERBOSE:
             print(f"Recieved incoming connection Request from: {ip}:{port}")
-        while True:
+        while True and RUNNING:
             new_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            new_socket.setblocking(True)
+            new_socket.settimeout(1)
             contin:bool = False
             for current_try in range(0,3):
                 try:
@@ -221,7 +235,7 @@ class clientImpl():
             return
 
     def handle_server_com(self):
-        while True:
+        while True and RUNNING:
             # Check if input queue has data
             try:
                 user_input = self.broadcast_queue.get_nowait()
@@ -240,7 +254,6 @@ class clientImpl():
             msg_id, payload = parse_packet(data)
             if msg_id == 0x03:
                 self.handle_send_peers(payload)
-                self.LATEST_LIST_PRINTED = False
             elif msg_id == 0x14:
                 print(f"[BROADCAST]: {payload.decode('utf-8')}")
             else:
@@ -268,16 +281,16 @@ class clientImpl():
                     print(f"New User: {nickname} joined the chat!")
                     self.tracked_users_udp_socket[nickname] = (ip_addr, port)
         elif status == 0x01:
-            if nickname not in self.tracked_users_udp_socket.keys():
-                print(f"User: {nickname} not in list an cannot be removed")
-            else:
+            if nickname in self.tracked_users_udp_socket.keys():
                 self.tracked_users_udp_socket.pop(nickname)
                 print(f"User: {nickname} left")
         else:
             print(f"unbekanntes statuscode beim bearbeiten der User-list: {status}")
 
     def exit_from_server(self):
+        
         # Calculate length (an integer), not assign the nickname itself
+        RUNNING = False
         nicknamelen = len(self.nickname.encode("utf-8"))
         nickname_encoded = self.nickname.encode("utf-8")
         ip_bytes = socket.inet_aton(self.ip_addr)
@@ -285,8 +298,7 @@ class clientImpl():
 
         payload = int.to_bytes(nicknamelen) + nickname_encoded + ip_bytes + struct.pack(">H", self.port) + int.to_bytes(0x01)
         package = build_packet(msg_id, payload)
-
-        self.server_socket.settimeout(5)
+        self.server_socket.settimeout(1)
         try:
             for cur_try in range(0, 2):
                 self.server_socket.send(package)
@@ -296,13 +308,7 @@ class clientImpl():
             print("Couldn't deregister from server")
             print(e)
 
-    def printlist(self):
-        while True:
-            if not self.LATEST_LIST_PRINTED:
-                #pprint.pprint(self.tracked_users_udp_socket)
-                self.LATEST_LIST_PRINTED = True
-            else:
-                time.sleep(1)
+
 
 def build_packet(msg_id: int, payload: bytes) -> bytes:
     payload_length = len(payload)
@@ -381,9 +387,10 @@ if __name__ == "__main__":
     server_thread.start()
     print("Type messages in the format: <nickname> <message>")
     print("Type 'exit' to quit.")
+    
 
     current_input = ""
-    while True:
+    while True and RUNNING:
         try:
             current_input = input()
         except KeyboardInterrupt:
@@ -401,9 +408,15 @@ if __name__ == "__main__":
         else:
             print("invallid format")
     print("closing connection")
+    RUNNING = False
+    server_thread.join()
+    recieve_thread.join()
+    udp_thread.join()
+    print_thread.join()
+    
     current_client.exit_from_server()
     current_client.server_socket.close()
-    current_client.udp_socket.close()
+
     for sock in current_client.tracked_user_tcp_socket.values():
         sock.close()
         print("goodbye")
