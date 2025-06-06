@@ -17,7 +17,8 @@ class clientImpl():
             self.udp_socket: socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             self.udp_socket.bind((OWN_IP, 0))
             self.ip_addr, self.port = self.udp_socket.getsockname()
-            print(f"UDP socket bound to {self.ip_addr}:{self.port}")
+            if VERBOSE:
+                print(f"UDP socket bound to {self.ip_addr}:{self.port}")
             self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.server_socket.settimeout(1)
             self.tracked_users_udp_socket:dict[str, tuple[str, int]] = {}
@@ -27,7 +28,7 @@ class clientImpl():
     def send(self, nickname: str, msg: str):
         if nickname not in self.tracked_user_tcp_socket:
             if nickname not in self.tracked_users_udp_socket.keys():
-                print("User was not found!")
+                print("User not found!")
                 return
             print(f"No TCP connection to {nickname}. Attempting to connect via tcp")
             # Versuche TCP-Verbindung aufzubauen
@@ -41,11 +42,13 @@ class clientImpl():
             try:
                 data = build_connection_request(new_socket.getsockname()[0], new_socket.getsockname()[1])
                 new_udp_socket.sendto(data, (peer_ip, peer_port))
-                print(f"Send request for getting TCP Port to {(peer_ip, peer_port)}")
+                if VERBOSE:
+                    print(f"Send request for getting TCP Port to {(peer_ip, peer_port)}")
                 new_socket.listen()
                 new_socket, addr = new_socket.accept()
                 data = new_socket.recv(1024)
-                print("Data recieved")
+                if VERBOSE:
+                    print("Data recieved")
                 msg_id, payload = parse_packet(data)
                 received_nickname, valid = parse_peer_connecting(payload)
                 if not valid or received_nickname != nickname:
@@ -65,7 +68,8 @@ class clientImpl():
         try:
             packet = build_message_to_peer(msg)
             self.tracked_user_tcp_socket[nickname].send(packet)
-            print(f"Send message to {nickname}: {msg}")
+            if VERBOSE:
+                print(f"Send message to {nickname}: {msg}")
         except Exception as e:
             print(f"Send failed, retrying TCP connect to {nickname}: {e}")
             self.tracked_user_tcp_socket.pop(nickname)
@@ -88,7 +92,8 @@ class clientImpl():
         nickname_encoded = self.nickname.encode("utf-8")
 
         format_string = f">B{nicknamelen}s4sH"
-        print(f"format_string: {format_string}, nicknamelen:{nicknamelen}, nickname_encoded:{nickname_encoded}, self.ip_addr:{self.ip_addr}, self.port:{self.port}")
+        if VERBOSE:
+            print(f"format_string: {format_string}, nicknamelen:{nicknamelen}, nickname_encoded:{nickname_encoded}, self.ip_addr:{self.ip_addr}, self.port:{self.port}")
         ip_bytes = socket.inet_aton(self.ip_addr)
         msg_id = 0x01
         payload = struct.pack(format_string, nicknamelen, nickname_encoded, ip_bytes, self.port)
@@ -112,19 +117,21 @@ class clientImpl():
     def recieve(self):
         index = 0
         while True:
-            data = bytes()
             if len(self.tracked_user_tcp_socket) == 0:
                 continue
+            data = bytes()
             try:
-                data = self.tracked_user_tcp_socket[list(self.tracked_user_tcp_socket.keys())[index]].recv(1024)
+                current_user = list(self.tracked_user_tcp_socket.keys())[index]
+                data = self.tracked_user_tcp_socket[current_user].recv(1024)
                 index = (index + 1) % len(self.tracked_user_tcp_socket)
             except socket.error as e:
                 index = (index + 1) % len(self.tracked_user_tcp_socket)
                 continue
-
+            except struct.error as e:
+                print(f"lost connection to {current_user}")
             message_id, payload_length = struct.unpack(">BH", data[:3])
             payload = data[3:3 + payload_length]
-            output_message = f"[{list(self.tracked_users_udp_socket.keys())[index]}]:{payload.decode('utf-8')}"
+            output_message = f"[{current_user}]:{payload.decode('utf-8')}"
             print(output_message)
 
     def listen_for_UDP_request(self):
@@ -144,17 +151,20 @@ class clientImpl():
                 continue
         threading.Thread(target=self.listen_for_UDP_request, daemon=True).start()
         #response
-        print(f"Recieved incoming connection Request from: {ip}:{port}")
+        if VERBOSE:
+            print(f"Recieved incoming connection Request from: {ip}:{port}")
         while True:
             new_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             new_socket.setblocking(True)
             contin:bool = False
             for current_try in range(0,3):
                 try:
-                    print("trying to accept connection...")
-                    print(f"IP:{ip} port: {port}")
+                    if VERBOSE:
+                        print("trying to accept connection...")
+                        print(f"IP:{ip} port: {port}")
                     new_socket.connect((ip, port))
-                    print("Connection succeded")
+                    if VERBOSE:
+                        print("Connection succeded")
                     break
                 except socket.timeout:
                     print("failed")
@@ -164,7 +174,8 @@ class clientImpl():
                         contin = True
             if contin:
                 continue
-            print(f"connection to {ip}:{port} succeded!")
+            if VERBOSE:
+                print(f"connection to {ip}:{port} succeded!")
             connection_request_packet = build_peer_connecting(self.nickname)
             for current_try in range(0,3):
                 try:
@@ -185,7 +196,8 @@ class clientImpl():
             data = bytes()
             for current_try in range(0,3):
                 try:
-                    print("getting hostname")
+                    if VERBOSE:
+                        print("getting hostname")
                     data = new_socket.recv(1024)
                     break
                 except socket.error as e:
@@ -223,6 +235,8 @@ class clientImpl():
                 data = self.server_socket.recv(1024)
             except socket.timeout:
                 continue
+            except socket.error:
+                continue
             msg_id, payload = parse_packet(data)
             if msg_id == 0x03:
                 self.handle_send_peers(payload)
@@ -250,8 +264,9 @@ class clientImpl():
             if nickname in self.tracked_users_udp_socket.keys():
                 print(f"New User {nickname} cannot join due to the alias already being present")
             else:
-                print(f"New User: {nickname} joined the chat!")
-                self.tracked_users_udp_socket[nickname] = (ip_addr, port)
+                if nickname != self.nickname:
+                    print(f"New User: {nickname} joined the chat!")
+                    self.tracked_users_udp_socket[nickname] = (ip_addr, port)
         elif status == 0x01:
             if nickname not in self.tracked_users_udp_socket.keys():
                 print(f"User: {nickname} not in list an cannot be removed")
@@ -270,7 +285,7 @@ class clientImpl():
 
         payload = int.to_bytes(nicknamelen) + nickname_encoded + ip_bytes + struct.pack(">H", self.port) + int.to_bytes(0x01)
         package = build_packet(msg_id, payload)
-        print(package)
+
         self.server_socket.settimeout(5)
         try:
             for cur_try in range(0, 2):
@@ -369,7 +384,10 @@ if __name__ == "__main__":
 
     current_input = ""
     while True:
-        current_input = input()
+        try:
+            current_input = input()
+        except KeyboardInterrupt:
+            break
         if current_input.lower() == "exit":
             break
         split = current_input.split(" ", 1)
