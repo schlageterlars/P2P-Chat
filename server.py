@@ -8,17 +8,17 @@ class Server:
         pass
     
     @abstractmethod
-    def deregister(nickname: str):
+    def deregister(self, nickname: str):
         pass
     
     @abstractmethod
-    def list() -> list[User]:
+    def list(self) -> list[User]:
         pass
     
     @abstractmethod
-    def send_to_all(from_nickname: str, msg: str):
+    def broadcast(self, message: str):
         pass
     
     @abstractmethod
-    def receive():
+    def receive(self, sock):
         pass
