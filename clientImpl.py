@@ -12,8 +12,9 @@ SERVER_IP:str= "127.0.0.1"
 OWN_IP:str = "127.0.0.1"
 SERVER_PORT:int= 12345
 RUNNING = True
-
+HEADER_SIZE = 3
 GLOBAL_TIMEOUT = 0.5
+UDP_PAYLOAD_SIZE = 9
 
 class bcolors:
     HEADER = '\033[95m'
@@ -61,13 +62,19 @@ class clientImpl():
                 data = build_connection_request(new_socket.getsockname()[0], new_socket.getsockname()[1])
                 new_udp_socket.sendto(data, (peer_ip, peer_port))
                 if VERBOSE:
-                    print(f"Send request for getting TCP Port to {(peer_ip, peer_port)}")
+                    print(f"Sent request for getting TCP Port to {(peer_ip, peer_port)}")
+                new_socket.setblocking(True)
                 new_socket.listen()
                 new_socket, addr = new_socket.accept()
-                data = new_socket.recv(1024)
+                if VERBOSE:
+                    print("recieved tcp connection")
+                header =  new_socket.recv(HEADER_SIZE)
+                if VERBOSE:
+                    print(f"recieved tcp header")
+                msg_id, payload_length = struct.unpack(">BH", header)
+                payload = new_socket.recv(payload_length)
                 if VERBOSE:
                     print("Data recieved")
-                msg_id, payload = parse_packet(data)
                 received_nickname, valid = parse_peer_connecting(payload)
                 if not valid or received_nickname != nickname:
                     print(f"valid:{valid}")
@@ -76,11 +83,14 @@ class clientImpl():
                     return
                 if VERBOSE:
                     print(f"Established TCP connection to {nickname} {addr}")
+                new_socket.settimeout(GLOBAL_TIMEOUT)
                 self.tracked_user_tcp_socket[nickname] = new_socket
                 peer_return_packet = build_peer_connecting(self.nickname)
+                if VERBOSE:
+                    print("sending msg")
                 new_socket.send(peer_return_packet)
             except Exception as e:
-                print(f"Failed to connect to {nickname}: {e}")
+                print(f"Failed to connect to {nickname}: {e.with_traceback()}")
                 print(f"my ip_addr: {self.ip_addr} my port: {self.port}")
                 return
             
@@ -142,7 +152,7 @@ class clientImpl():
 
     def recieve(self):
         index = 0
-        while True and RUNNING: #geht nicht mehr raus
+        while True and RUNNING: 
             if len(self.tracked_user_tcp_socket) == 0:
                 time.sleep(0.5)
                 continue
@@ -150,19 +160,20 @@ class clientImpl():
             current_user = None
             try:
                 current_user = list(self.tracked_user_tcp_socket.keys())[index]
-                data = self.tracked_user_tcp_socket[current_user].recv(1024)
+                header = self.tracked_user_tcp_socket[current_user].recv(HEADER_SIZE)
+                message_id, payload_length = struct.unpack(">BH", header)
+                payload = self.tracked_user_tcp_socket[current_user].recv(payload_length) 
                 index = (index + 1) % len(self.tracked_user_tcp_socket)
-                if data:
-                    message_id, payload_length = struct.unpack(">BH", data[:3])
-                    payload = data[3:3 + payload_length]
+                if header:
+                    message_id, payload_length = struct.unpack(">BH", header)
                     output_message = f"[{current_user}]:{payload.decode('utf-8')}"
                     print(output_message)
                 else:
-                    print(f"lost connection to {current_user}")
+                    print(f"\tlost connection to {current_user}")
                     if current_user in self.tracked_user_tcp_socket:
                         self.tracked_user_tcp_socket.pop(current_user)
             except struct.error as e:
-                print(f"lost connection to {current_user}")
+                print(f"\tlost connection to {current_user}")
                 if current_user in self.tracked_user_tcp_socket:
                     self.tracked_user_tcp_socket.pop(current_user)
             except socket.error as e:
@@ -179,9 +190,18 @@ class clientImpl():
         ip, port =  (0, "")
         while True and RUNNING:
             try:
-                data, addr = self.udp_socket.recvfrom(1024)
-                msg_id, data = parse_packet(data)
-                ip, port = parse_connection_request(data)
+                data = self.udp_socket.recv(UDP_PAYLOAD_SIZE)
+                header = data[:HEADER_SIZE]
+                payload = data[3:]
+                if VERBOSE:
+                    print("received udp-header")
+                msg_id, payload_length = struct.unpack(">BH", header)
+                if VERBOSE:
+                    print(f"msg_id: {msg_id}")
+                    print(f"payload_length: {payload_length}")
+                if VERBOSE:
+                    print("recieved whole message")
+                ip, port = parse_connection_request(payload)
                 break
             except socket.timeout as e:
                 if RUNNING:
@@ -196,7 +216,6 @@ class clientImpl():
             print(f"Recieved incoming connection Request from: {ip}:{port}")
         while True and RUNNING:
             new_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            new_socket.settimeout(GLOBAL_TIMEOUT)
             contin:bool = False
             for current_try in range(0,3):
                 try:
@@ -218,9 +237,11 @@ class clientImpl():
             if VERBOSE:
                 print(f"connection to {ip}:{port} succeded!")
             connection_request_packet = build_peer_connecting(self.nickname)
+            new_socket.settimeout(1)
             for current_try in range(0,3):
                 try:
-                    print("sending request")
+                    if VERBOSE:
+                        print("sending request")
                     new_socket.send(connection_request_packet)
                     break
                 except socket.error as e:
@@ -229,17 +250,18 @@ class clientImpl():
                     if current_try >= 3:
                         print("failed to send")
                         print("dropping connection attempt...")
-                        contin = True
+                        return
                     else:
                         print("retrying")
-            if contin:
-                continue
             data = bytes()
+            payload = bytes()
             for current_try in range(0,3):
                 try:
                     if VERBOSE:
-                        print("getting hostname")
-                    data = new_socket.recv(1024)
+                        print("received hostname")
+                    header = new_socket.recv(HEADER_SIZE)
+                    msg_id, payload_length = struct.unpack(">BH", header)
+                    payload = new_socket.recv(payload_length)
                     break
                 except socket.error as e:
                     print("failed to send request message:")
@@ -250,15 +272,15 @@ class clientImpl():
                         contin = True
                     else:
                         print("retrying")
-                if contin:
-                    continue
-            msg_id, payload = parse_packet(data)
+            if contin:
+                continue
             target_nickname , valid = parse_peer_connecting(payload)
             if not valid:
                 print("ICH HAB KEIN BOCK MEHR AUF DIESE BLÖDE KACK AUFGABE MANN ICH SITZ DA GRAD VIEL ZU LANG DRANN EY DAS KANN DOCH NICHT SEIN")
                 continue
             if VERBOSE:
                 print("succesfully established connection")
+            new_socket.settimeout(GLOBAL_TIMEOUT)
             self.tracked_user_tcp_socket[target_nickname] = new_socket
             return
 
@@ -274,35 +296,46 @@ class clientImpl():
                     print(f"Sending '{user_input}' broadcast.")
                 packet = build_packet(0x04, user_input.encode())
                 self.server_socket.send(packet)
+
+            msd_id = 0
+            payload = bytes()
             try:
-                data = self.server_socket.recv(1024)
+                header = self.server_socket.recv(HEADER_SIZE) 
+                if VERBOSE: 
+                    print(header)
+                msg_id, payload_length = struct.unpack(">BH", header)
+                payload = self.server_socket.recv(payload_length) 
             except socket.timeout:
                 continue
             except socket.error:
                 continue
-            msg_id, payload = parse_packet(data)
+            
             if msg_id == 0x03:
                 self.handle_peer(payload)
             elif msg_id == 0x12:
                 self.handle_send_peers(payload)
                 self.print_user_list()
             elif msg_id == 0x14:
-                print(f"[BROADCAST]: {payload.decode('utf-8')}")
+                print(f"{bcolors.UNDERLINE}{bcolors.HEADER}[BROADCAST]: {payload.decode('utf-8')}" + bcolors.ENDC)
             else:
                 print(f"unknown message from server: {msg_id}")
             time.sleep(1)
     def print_user_list(self):
         user_list = list(self.tracked_users_udp_socket)
         user_list.sort()
-        print("User:")
-        for user in user_list:
-            userstring = user
-            if user in self.tracked_user_tcp_socket:
-                userstring =  userstring + "\t\t" + bcolors.OKGREEN +"tcp connecton established" + bcolors.ENDC
-            else:
-                userstring = userstring + "\t\t" + bcolors.WARNING + "tcp connection not established" + bcolors.ENDC
-            print(userstring)
-
+        if self.tracked_users_udp_socket:
+            print("Users:")
+            for user in user_list:
+                userstring = user
+                if user in self.tracked_user_tcp_socket:
+                    userstring = "\t" + userstring + "\t" + bcolors.OKGREEN +"tcp connecton established" + bcolors.ENDC
+                else:
+                    userstring = "\t" + userstring + "\t" + bcolors.WARNING + "tcp connection not established" + bcolors.ENDC
+                print(userstring)
+        else:
+            print(f"{bcolors.FAIL}nobody wanna be with ya")
+            time.sleep(2)
+            print("feels bad man" + bcolors.ENDC)
     def parse_send_peers(self, payload: bytes) -> list[tuple[str, str, int]]:
         peers = []
         offset = 0
@@ -361,15 +394,15 @@ class clientImpl():
         nickname, ip_addr, port, status = self.parse_peer(payload)
         if status == 0x02:
             if nickname in self.tracked_users_udp_socket.keys():
-                print(f"New User {nickname} cannot join due to the alias already being present")
+                print(f"\tNew User: \t {nickname} cannot join due to the alias already being present")
             else:
                 if nickname != self.nickname:
-                    print(f"New User: {nickname} joined the chat!")
+                    print(f"\tNew User: \t {bcolors.OKGREEN} {nickname} {bcolors.ENDC}  joined the chat!")
                     self.tracked_users_udp_socket[nickname] = (ip_addr, port)
         elif status == 0x01:
             if nickname in self.tracked_users_udp_socket.keys():
                 self.tracked_users_udp_socket.pop(nickname)
-                print(f"User: {nickname} left")
+                print(f"\tUser: {nickname} left")
         else:
             print(f"unbekanntes statuscode beim bearbeiten der User-list: {status}")
 
@@ -434,7 +467,9 @@ def build_peer_connecting(nickname: str)-> bytes:
 
 def parse_peer_connecting(payload: bytes) -> tuple[str, bool]:
     if len(payload) < 2:
-        raise ValueError("PEER_CONNECTING Payload zu kurz.")
+    
+        raise ValueError(f"PEER_CONNECTING Payload zu kurz. payload: {payload}")
+        
     nickname_bytes = payload[:-1]
     check_byte = payload[-1]
     nickname = nickname_bytes.decode("utf-8")
@@ -488,7 +523,7 @@ if __name__ == "__main__":
         elif split[0].lower() in set(["ls", "list", "listuser", "l"]):
             current_client.print_user_list()
         elif split[0].lower() == "whoami":
-            print(current_client.nickname)
+            print(bcolors.OKCYAN + current_client.nickname + bcolors.ENDC)
         else:
             print("invallid format")
     print("closing connection")
