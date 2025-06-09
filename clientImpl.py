@@ -132,7 +132,7 @@ class clientImpl():
         try:
             raw_data = self.server_socket.recv(4)
             ret_msg_id, ret_payload = parse_packet(raw_data)
-            if int.from_bytes(ret_payload) == 0x01:
+            if int.from_bytes(ret_payload, byteorder="big") == 0x01:
                 print("Server LogIn successfull")
             else:
                 print(f"User already in server. Try to use a different username !")
@@ -413,7 +413,7 @@ class clientImpl():
         nickname_encoded = self.nickname.encode("utf-8")
         ip_bytes = socket.inet_aton(self.ip_addr)
         msg_id = 0x03
-        payload = int.to_bytes(nicknamelen) + nickname_encoded + ip_bytes + struct.pack(">H", self.port) + int.to_bytes(0x01)
+        payload = int.to_bytes(nicknamelen, byteorder="big") + nickname_encoded + ip_bytes + struct.pack(">H", self.port) + int.to_bytes(0x01, byteorder="big")
         package = build_packet(msg_id, payload)
         self.server_socket.settimeout(GLOBAL_TIMEOUT)
         try:
