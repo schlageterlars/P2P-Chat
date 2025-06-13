@@ -7,9 +7,9 @@ import pprint
 import queue
 
 
-VERBOSE:bool = False
-SERVER_IP:str= "127.0.0.1"
-OWN_IP:str = "127.0.0.1"
+VERBOSE:bool = True
+SERVER_IP:str= "10.117.153.42"
+OWN_IP:str = "10.117.153.42"
 SERVER_PORT:int= 12345
 RUNNING = True
 HEADER_SIZE = 3
@@ -29,6 +29,7 @@ class bcolors:
 
 class clientImpl():
     def __init__(self, nickname: str):
+            self.lock = threading.Lock()
             self.nickname:str = nickname
             self.udp_socket: socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             self.udp_socket.settimeout(GLOBAL_TIMEOUT)
@@ -63,7 +64,7 @@ class clientImpl():
                 new_udp_socket.sendto(data, (peer_ip, peer_port))
                 if VERBOSE:
                     print(f"Sent request for getting TCP Port to {(peer_ip, peer_port)}")
-                new_socket.setblocking(True)
+                new_socket.settimeout(7)
                 new_socket.listen()
                 new_socket, addr = new_socket.accept()
                 if VERBOSE:
@@ -88,7 +89,10 @@ class clientImpl():
                 peer_return_packet = build_peer_connecting(self.nickname)
                 if VERBOSE:
                     print("sending msg")
-                new_socket.send(peer_return_packet)
+                new_socket.send(peer_return_packet) 
+            except socket.timeout as e:
+                print("Timeout for Udp Request, abording... ")
+                return
             except Exception as e:
                 print(f"Failed to connect to {nickname}: {e.with_traceback()}")
                 print(f"my ip_addr: {self.ip_addr} my port: {self.port}")
@@ -125,7 +129,7 @@ class clientImpl():
             print(f"format_string: {format_string}, nicknamelen:{nicknamelen}, nickname_encoded:{nickname_encoded}, self.ip_addr:{self.ip_addr}, self.port:{self.port}")
         ip_bytes = socket.inet_aton(self.ip_addr)
         msg_id = 0x01
-        payload = struct.pack(format_string, nicknamelen, nickname_encoded, ip_bytes, self.port)
+        payload = struct.pack(format_string, nicknamelen, nickname_encoded, ip_bytes, self.port,)
         package = build_packet(msg_id, payload)
         self.server_socket.send(package)
 
@@ -153,11 +157,13 @@ class clientImpl():
     def recieve(self):
         index = 0
         while True and RUNNING: 
+            self.lock.acquire()
             if len(self.tracked_user_tcp_socket) == 0:
                 time.sleep(0.5)
                 continue
             data = bytes()
             current_user = None
+            self.lock.release()
             try:
                 current_user = list(self.tracked_user_tcp_socket.keys())[index]
                 header = self.tracked_user_tcp_socket[current_user].recv(HEADER_SIZE)
@@ -170,12 +176,16 @@ class clientImpl():
                     print(output_message)
                 else:
                     print(f"\tlost connection to {current_user}")
+                    self.lock.acquire()
                     if current_user in self.tracked_user_tcp_socket:
                         self.tracked_user_tcp_socket.pop(current_user)
+                    self.lock.release()
             except struct.error as e:
                 print(f"\tlost connection to {current_user}")
+                self.lock.acquire()
                 if current_user in self.tracked_user_tcp_socket:
                     self.tracked_user_tcp_socket.pop(current_user)
+                self.lock.release()
             except socket.error as e:
                 index = (index + 1) % len(self.tracked_user_tcp_socket)
             except OSError:
@@ -216,6 +226,7 @@ class clientImpl():
             print(f"Recieved incoming connection Request from: {ip}:{port}")
         while True and RUNNING:
             new_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            new_socket.settimeout(GLOBAL_TIMEOUT)
             contin:bool = False
             for current_try in range(0,3):
                 try:
@@ -227,13 +238,11 @@ class clientImpl():
                         print("Connection succeded")
                     break
                 except socket.timeout:
-                    print("failed")
+                    print("failed to create tcp connection")
                     if current_try == 3:
                         print("failed all connection attempts")
                         print("dropping connection attempt...")
-                        contin = True
-            if contin:
-                continue
+                        return
             if VERBOSE:
                 print(f"connection to {ip}:{port} succeded!")
             connection_request_packet = build_peer_connecting(self.nickname)
@@ -533,6 +542,6 @@ if __name__ == "__main__":
     for sock in current_client.tracked_user_tcp_socket.values():
         sock.close()
     server_thread.join()
-    udp_thread.join()
+    #udp_thread.join()
     # recieve_thread.join()
     print("goodbye")

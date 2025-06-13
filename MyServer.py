@@ -21,7 +21,7 @@ VERBOSE: bool = False
 
 #'10.147.85.98'
 class ChatServer(Server):
-    def __init__(self, host='127.0.0.1', port=12345):
+    def __init__(self, host='10.117.153.42', port=12345):
         self.clients :dict ={}
         self.lock = threading.Lock()
         self.host = host
@@ -41,11 +41,14 @@ class ChatServer(Server):
             except Exception as e:
                 print(f"[ERROR] Fehler beim accept: {e}")
 
-    def receive(self, sock):
+    def receive(self, sock: socket.socket):
         nickname = None
         while True:
             try:
+                sock.settimeout(3)
                 header = sock.recv(3)
+                if not header :
+                    raise BlockingIOError
                 if len(header) < 3:
                     break
                 msg_id, payload_len = header[0], int.from_bytes(header[1:3], 'big')
@@ -75,6 +78,8 @@ class ChatServer(Server):
                         print(f"[WARN] Unbekannter STATUS: {status}")
                 else:
                     print(f"[WARN] Unbekannte MSG_ID: {msg_id}")
+            except socket.timeout as e:
+                continue
             except Exception as e:
                 print(f"[ERROR] receive(): {e}")
                 self.deregister(nickname)
