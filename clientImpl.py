@@ -7,8 +7,8 @@ import pprint
 import queue
 
 
-VERBOSE:bool = True
-SERVER_IP:str= "10.117.153.42"
+VERBOSE:bool = False
+SERVER_IP:str= "10.117.153.155"
 OWN_IP:str = "10.117.153.42"
 SERVER_PORT:int= 12345
 RUNNING = True
@@ -29,7 +29,7 @@ class bcolors:
 
 class clientImpl():
     def __init__(self, nickname: str):
-            self.lock = threading.Lock()
+            
             self.nickname:str = nickname
             self.udp_socket: socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             self.udp_socket.settimeout(GLOBAL_TIMEOUT)
@@ -157,13 +157,11 @@ class clientImpl():
     def recieve(self):
         index = 0
         while True and RUNNING: 
-            self.lock.acquire()
             if len(self.tracked_user_tcp_socket) == 0:
                 time.sleep(0.5)
                 continue
             data = bytes()
             current_user = None
-            self.lock.release()
             try:
                 current_user = list(self.tracked_user_tcp_socket.keys())[index]
                 header = self.tracked_user_tcp_socket[current_user].recv(HEADER_SIZE)
@@ -176,20 +174,17 @@ class clientImpl():
                     print(output_message)
                 else:
                     print(f"\tlost connection to {current_user}")
-                    self.lock.acquire()
                     if current_user in self.tracked_user_tcp_socket:
                         self.tracked_user_tcp_socket.pop(current_user)
-                    self.lock.release()
             except struct.error as e:
                 print(f"\tlost connection to {current_user}")
-                self.lock.acquire()
                 if current_user in self.tracked_user_tcp_socket:
                     self.tracked_user_tcp_socket.pop(current_user)
-                self.lock.release()
-            except socket.error as e:
+            except (socket.error, IndexError, KeyError ) as e:
                 index = (index + 1) % len(self.tracked_user_tcp_socket)
             except OSError:
                 return
+
 
 
     def listen_for_UDP_request(self):
