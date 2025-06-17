@@ -16,7 +16,7 @@ class Server:
         pass
     
     @abstractmethod
-    def broadcast(self, message: str):
+    def broadcast(self, message: str, nickname: str):
         pass
     
     @abstractmethod

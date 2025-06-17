@@ -21,7 +21,7 @@ VERBOSE: bool = False
 
 #'10.147.85.98'
 class ChatServer(Server):
-    def __init__(self, host='10.117.153.42', port=12345):
+    def __init__(self, host='10.117.153.98', port=12345):
         self.clients :dict ={}
         self.lock = threading.Lock()
         self.host = host
@@ -61,7 +61,7 @@ class ChatServer(Server):
                 elif msg_id == MSG_GET_PEERS:
                     self.send_peer_list(sock)
                 elif msg_id == MSG_SEND_BROADCAST:
-                    self.broadcast(payload.decode())
+                    self.broadcast(payload.decode(), nickname)
                 elif msg_id == MSG_PEERS_CHANGED:
                     print("[INFO] Peer-Änderung empfangen")
                     nickname_len = payload[0]
@@ -72,7 +72,7 @@ class ChatServer(Server):
                             print(f"[INFO] abgemelden")
                         self.deregister(nickname)
                     elif status == STATUS_PEER_ADDED:
-                        print(f"[INIO] angemelden")
+                        print(f"[INFO] angemelden")
                         #self.send_peer_change(user, STATUS_PEER_ADDED)
                     else:
                         print(f"[WARN] Unbekannter STATUS: {status}")
@@ -153,9 +153,10 @@ class ChatServer(Server):
                 print(f"Error: {e}")
                 continue
 
-    def broadcast(self, message: str):
+    def broadcast(self, message: str, nickname: str):
         with self.lock:
-            payload = message.encode()
+            name = "[Broadcast] from " + nickname + ": "
+            payload = name.encode() + message.encode()
             msg = bytes([MSG_FROM_SERVER]) + len(payload).to_bytes(2, 'big') + payload
             for user in self.clients.values():
                 try:

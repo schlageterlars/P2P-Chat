@@ -7,6 +7,7 @@ import pprint
 import queue
 
 
+
 VERBOSE:bool = False
 SERVER_IP:str= "10.117.153.155"
 OWN_IP:str = "10.117.153.42"
@@ -320,7 +321,7 @@ class clientImpl():
                 self.handle_send_peers(payload)
                 self.print_user_list()
             elif msg_id == 0x14:
-                print(f"{bcolors.UNDERLINE}{bcolors.HEADER}[BROADCAST]: {payload.decode('utf-8')}" + bcolors.ENDC)
+                print(f"{bcolors.UNDERLINE}{bcolors.HEADER}{payload.decode('utf-8')}" + bcolors.ENDC)
             else:
                 print(f"unknown message from server: {msg_id}")
             time.sleep(1)
