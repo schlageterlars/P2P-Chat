@@ -21,7 +21,7 @@ VERBOSE: bool = False
 
 #'10.147.85.98'
 class ChatServer(Server):
-    def __init__(self, host='127.0.0.1', port=12345):
+    def __init__(self, host='10.117.153.98', port=12345):
         self.clients :dict ={}
         self.lock = threading.Lock()
         self.host = host
@@ -41,11 +41,14 @@ class ChatServer(Server):
             except Exception as e:
                 print(f"[ERROR] Fehler beim accept: {e}")
 
-    def receive(self, sock):
+    def receive(self, sock: socket.socket):
         nickname = None
         while True:
             try:
+                sock.settimeout(3)
                 header = sock.recv(3)
+                if not header :
+                    raise BlockingIOError
                 if len(header) < 3:
                     break
                 msg_id, payload_len = header[0], int.from_bytes(header[1:3], 'big')
@@ -58,7 +61,7 @@ class ChatServer(Server):
                 elif msg_id == MSG_GET_PEERS:
                     self.send_peer_list(sock)
                 elif msg_id == MSG_SEND_BROADCAST:
-                    self.broadcast(payload.decode())
+                    self.broadcast(payload.decode(), nickname)
                 elif msg_id == MSG_PEERS_CHANGED:
                     print("[INFO] Peer-Änderung empfangen")
                     nickname_len = payload[0]
@@ -69,12 +72,14 @@ class ChatServer(Server):
                             print(f"[INFO] abgemelden")
                         self.deregister(nickname)
                     elif status == STATUS_PEER_ADDED:
-                        print(f"[INIO] angemelden")
+                        print(f"[INFO] angemelden")
                         #self.send_peer_change(user, STATUS_PEER_ADDED)
                     else:
                         print(f"[WARN] Unbekannter STATUS: {status}")
                 else:
                     print(f"[WARN] Unbekannte MSG_ID: {msg_id}")
+            except socket.timeout as e:
+                continue
             except Exception as e:
                 print(f"[ERROR] receive(): {e}")
                 self.deregister(nickname)
@@ -148,9 +153,10 @@ class ChatServer(Server):
                 print(f"Error: {e}")
                 continue
 
-    def broadcast(self, message: str):
+    def broadcast(self, message: str, nickname: str):
         with self.lock:
-            payload = message.encode()
+            name = "[Broadcast] from " + nickname + ": "
+            payload = name.encode() + message.encode()
             msg = bytes([MSG_FROM_SERVER]) + len(payload).to_bytes(2, 'big') + payload
             for user in self.clients.values():
                 try:
